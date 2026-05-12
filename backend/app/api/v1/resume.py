@@ -125,8 +125,3 @@ async def upload_and_match(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"处理失败: {str(e)}")
 
-
-@router.get("/health")
-async def health_check():
-    """健康检查接口"""
-    return {"status": "healthy", "ai_enabled": settings.ai_enabled}

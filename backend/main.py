@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.api.v1.resume import router as resume_router
-from app.core.config import settings
+
 
 # 创建应用
 app = FastAPI(
@@ -44,17 +44,6 @@ if os.path.exists(frontend_dir):
         if os.path.exists(index_path):
             return FileResponse(index_path)
         return {"message": "AI 赋能的智能简历分析系统 API 服务运行中"}
-
-
-@app.get("/api/health")
-async def api_health():
-    """API 健康检查"""
-    return {
-        "status": "healthy",
-        "version": "1.0.0",
-        "ai_enabled": settings.ai_enabled,
-        "redis_enabled": settings.redis_enabled,
-    }
 
 
 if __name__ == "__main__":

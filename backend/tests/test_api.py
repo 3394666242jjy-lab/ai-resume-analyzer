@@ -9,14 +9,6 @@ from main import app
 client = TestClient(app)
 
 
-def test_health_check():
-    """测试健康检查接口"""
-    response = client.get("/api/health")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "healthy"
-
-
 def test_upload_invalid_format():
     """测试上传非 PDF 文件"""
     files = {"file": ("test.txt", b"not a pdf", "text/plain")}

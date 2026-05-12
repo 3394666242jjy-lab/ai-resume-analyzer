@@ -8,9 +8,6 @@ vars:
   service:
     name: ai-resume-service
     description: AI 赋能的智能简历分析系统
-    environmentVariables:
-      APP_HOST: 0.0.0.0
-      APP_PORT: '9000'
 
 resources:
   ai_resume_analyzer:
@@ -19,24 +16,14 @@ resources:
       region: ${vars.region}
       serviceName: ${vars.service.name}
       serviceDescription: ${vars.service.description}
-      functionName: resume-api
+      functionName: resume-api-v3
       description: 简历分析 API 服务
-      runtime: custom
+      runtime: custom.debian11
       cpu: 1
       memorySize: 2048
       diskSize: 512
       timeout: 120
-      environmentVariables: ${vars.service.environmentVariables}
       code: ./
-      customRuntimeConfig:
-        command:
-          - uvicorn
-        args:
-          - main:app
-          - --host
-          - 0.0.0.0
-          - --port
-          - '9000'
       triggers:
         - triggerName: http-trigger
           triggerType: http
