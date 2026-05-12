@@ -8,18 +8,9 @@ vars:
   service:
     name: ai-resume-service
     description: AI 赋能的智能简历分析系统
-    nasConfig: auto
-    vpcConfig: auto
     environmentVariables:
       APP_HOST: 0.0.0.0
       APP_PORT: 9000
-      # 请配置您的 OpenAI API Key
-      # OPENAI_API_KEY: ${env.OPENAI_API_KEY}
-      # OPENAI_BASE_URL: https://api.openai.com/v1
-      # OPENAI_MODEL: gpt-4o-mini
-      # Redis 配置（可选）
-      # REDIS_HOST: ${env.REDIS_HOST}
-      # REDIS_PORT: 6379
 
 resources:
   ai_resume_analyzer:
