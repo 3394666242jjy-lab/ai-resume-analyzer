@@ -16,6 +16,14 @@ build/
 backend/uploads/
 *.pdf
 
+# Python 依赖（部署时自动安装）
+backend/*.dist-info/
+backend/__pycache__/
+backend/venv/
+backend/bin/
+backend/deps/
+backend/get-pip.py
+
 # 环境变量
 .env
 .env.local
