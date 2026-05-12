@@ -16,7 +16,7 @@ resources:
       region: ${vars.region}
       serviceName: ${vars.service.name}
       serviceDescription: ${vars.service.description}
-      functionName: resume-api-v3
+      functionName: resume-api-v5
       description: 简历分析 API 服务
       runtime: custom.debian11
       cpu: 1
@@ -24,6 +24,11 @@ resources:
       diskSize: 512
       timeout: 120
       code: ./
+      customRuntimeConfig:
+        command:
+          - bash
+        args:
+          - /code/bootstrap
       triggers:
         - triggerName: http-trigger
           triggerType: http

@@ -1,4 +1,1 @@
-/**
- * 部署配置文件
- */
-window.API_BASE = 'https://resume-api-votyxfhoif.cn-hangzhou.fcapp.run/api/v1';
+window.API_BASE = 'https://resume-api-v-urokdnwpiq.cn-hangzhou.fcapp.run/api/v1';
