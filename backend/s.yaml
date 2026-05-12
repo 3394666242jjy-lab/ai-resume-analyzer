@@ -1,0 +1,58 @@
+# 阿里云 Serverless 函数计算配置
+edition: 3.0.0
+name: ai-resume-analyzer
+access: default
+
+vars:
+  region: cn-hangzhou
+  service:
+    name: ai-resume-service
+    description: AI 赋能的智能简历分析系统
+    nasConfig: auto
+    vpcConfig: auto
+    environmentVariables:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 9000
+      # 请配置您的 OpenAI API Key
+      # OPENAI_API_KEY: ${env.OPENAI_API_KEY}
+      # OPENAI_BASE_URL: https://api.openai.com/v1
+      # OPENAI_MODEL: gpt-4o-mini
+      # Redis 配置（可选）
+      # REDIS_HOST: ${env.REDIS_HOST}
+      # REDIS_PORT: 6379
+
+resources:
+  ai_resume_analyzer:
+    component: fc3
+    props:
+      region: ${vars.region}
+      serviceName: ${vars.service.name}
+      serviceDescription: ${vars.service.description}
+      functionName: resume-api
+      description: 简历分析 API 服务
+      runtime: custom
+      cpu: 1
+      memorySize: 2048
+      diskSize: 512
+      timeout: 120
+      environmentVariables: ${vars.service.environmentVariables}
+      code: ./
+      customRuntimeConfig:
+        command:
+          - uvicorn
+        args:
+          - main:app
+          - --host
+          - 0.0.0.0
+          - --port
+          - '9000'
+      triggers:
+        - triggerName: http-trigger
+          triggerType: http
+          triggerConfig:
+            authType: anonymous
+            methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 赋能的智能简历分析系统</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 AI 赋能的智能简历分析系统</h1>
+            <p>上传简历，AI 自动解析关键信息并匹配岗位需求</p>
+        </header>
+
+        <main>
+            <!-- 上传区域 -->
+            <section class="upload-section">
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">📄</div>
+                    <p>点击或拖拽上传 PDF 简历</p>
+                    <span class="upload-hint">支持多页 PDF，最大 10MB</span>
+                    <input type="file" id="fileInput" accept=".pdf" hidden>
+                </div>
+                <div class="file-info" id="fileInfo" style="display: none;">
+                    <span id="fileName"></span>
+                    <button class="btn-remove" id="btnRemove">✕</button>
+                </div>
+            </section>
+
+            <!-- 岗位描述 -->
+            <section class="job-section">
+                <label for="jobDescription">📝 岗位需求描述</label>
+                <textarea 
+                    id="jobDescription" 
+                    rows="6" 
+                    placeholder="请粘贴招聘岗位的详细需求描述，例如：&#10;&#10;【岗位职责】&#10;1. 负责后端服务开发与维护&#10;2. 参与系统架构设计&#10;&#10;【任职要求】&#10;1. 3年以上 Python 开发经验&#10;2. 熟悉 Flask/Django 框架&#10;3. 熟悉 MySQL、Redis&#10;4. 有微服务开发经验优先"
+                ></textarea>
+            </section>
+
+            <!-- 操作按钮 -->
+            <section class="action-section">
+                <button class="btn-primary" id="btnAnalyze" disabled>
+                    <span class="btn-text">🔍 开始分析</span>
+                    <span class="btn-loading" style="display: none;">分析中...</span>
+                </button>
+            </section>
+
+            <!-- 进度条 -->
+            <div class="progress-bar" id="progressBar" style="display: none;">
+                <div class="progress-fill" id="progressFill"></div>
+                <span class="progress-text" id="progressText">正在上传...</span>
+            </div>
+
+            <!-- 结果区域 -->
+            <section class="result-section" id="resultSection" style="display: none;">
+                <!-- 匹配评分 -->
+                <div class="score-card">
+                    <h2>📊 匹配度评分</h2>
+                    <div class="score-overview">
+                        <div class="score-circle">
+                            <svg viewBox="0 0 100 100">
+                                <circle class="score-bg" cx="50" cy="50" r="45"></circle>
+                                <circle class="score-progress" id="scoreCircle" cx="50" cy="50" r="45"></circle>
+                            </svg>
+                            <div class="score-number" id="overallScore">0</div>
+                        </div>
+                        <div class="score-details">
+                            <div class="score-item">
+                                <span class="score-label">技能匹配率</span>
+                                <div class="score-bar">
+                                    <div class="score-bar-fill" id="skillBar"></div>
+                                </div>
+                                <span class="score-value" id="skillScore">0%</span>
+                            </div>
+                            <div class="score-item">
+                                <span class="score-label">经验匹配率</span>
+                                <div class="score-bar">
+                                    <div class="score-bar-fill" id="expBar"></div>
+                                </div>
+                                <span class="score-value" id="expScore">0%</span>
+                            </div>
+                            <div class="score-item">
+                                <span class="score-label">学历匹配率</span>
+                                <div class="score-bar">
+                                    <div class="score-bar-fill" id="eduBar"></div>
+                                </div>
+                                <span class="score-value" id="eduScore">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="analysis-text" id="analysisText"></div>
+                </div>
+
+                <!-- 关键词匹配 -->
+                <div class="keywords-card">
+                    <h3>🔑 关键词匹配</h3>
+                    <div class="keywords-section">
+                        <div class="keywords-matched">
+                            <h4>✅ 已匹配</h4>
+                            <div class="keywords-list" id="matchedKeywords"></div>
+                        </div>
+                        <div class="keywords-missing">
+                            <h4>❌ 未匹配</h4>
+                            <div class="keywords-list" id="missingKeywords"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 简历信息 -->
+                <div class="resume-info-card">
+                    <h3>👤 简历信息提取</h3>
+                    
+                    <div class="info-group">
+                        <h4>基本信息</h4>
+                        <div class="info-grid" id="basicInfo"></div>
+                    </div>
+
+                    <div class="info-group">
+                        <h4>求职意向</h4>
+                        <div class="info-grid" id="jobIntention"></div>
+                    </div>
+
+                    <div class="info-group">
+                        <h4>教育背景</h4>
+                        <div class="info-list" id="educationBg"></div>
+                    </div>
+
+                    <div class="info-group">
+                        <h4>工作经历</h4>
+                        <div class="info-list" id="workExp"></div>
+                    </div>
+
+                    <div class="info-group">
+                        <h4>项目经历</h4>
+                        <div class="info-list" id="projectExp"></div>
+                    </div>
+
+                    <div class="info-group">
+                        <h4>技能列表</h4>
+                        <div class="skills-tags" id="skillsList"></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>AI 赋能的智能简历分析系统 &copy; 2024</p>
+        </footer>
+    </div>
+
+    <!-- 提示消息 -->
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
