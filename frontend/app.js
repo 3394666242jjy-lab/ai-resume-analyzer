@@ -17,6 +17,9 @@ function getApiBase() {
     if (host.includes('localhost') || host.includes('127.0.0.1')) {
         return 'http://localhost:8000/api/v1';
     }
+    if (host.endsWith('github.io')) {
+        return 'https://resume-api-v-urokdnwpiq.cn-hangzhou.fcapp.run/api/v1';
+    }
     // GitHub Pages 或其他静态托管，默认使用相对路径
     // 部署时请修改此处或在 localStorage 中设置 api_base
     return '/api/v1';

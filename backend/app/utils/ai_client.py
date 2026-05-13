@@ -233,13 +233,20 @@ class QwenAIClient:
             "}"
         )
 
+        user_prompt += (
+            "\n\n额外校验规则：只允许从【岗位描述】中抽取岗位要求；"
+            "matched_keywords 必须同时能在【简历内容】中找到直接或同义证据；"
+            "missing_keywords 必须是【岗位描述】明确要求但【简历内容】没有证据的内容；"
+            "analysis 必须围绕本次岗位描述，不要输出与岗位无关的通用评价。"
+        )
+
         try:
             content = await self._chat_completion(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.2,
+                temperature=0.1,
                 max_tokens=2048,
             )
             cleaned = self._clean_json_response(content)

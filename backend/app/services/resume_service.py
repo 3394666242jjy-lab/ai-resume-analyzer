@@ -77,6 +77,7 @@ class ResumeService:
 
         # AI 提取信息
         extracted_data = await self.ai_client.extract_resume_info(raw_text)
+        self._patch_basic_info_from_text(extracted_data, raw_text)
 
         # 构建响应
         result = {
@@ -89,6 +90,22 @@ class ResumeService:
         # 缓存解析结果
         cache.set(cache_key, result, ttl=86400)
         return result
+
+    def _patch_basic_info_from_text(self, data: Dict[str, Any], raw_text: str) -> None:
+        """Fill high-confidence fields that are often distorted by PDF extraction."""
+        basic_info = data.setdefault("basic_info", {})
+
+        detected_phone = resume_parser.extract_phone(raw_text)
+        current_phone = basic_info.get("phone")
+        current_detected_phone = resume_parser.extract_phone(str(current_phone)) if current_phone else None
+        if detected_phone and current_detected_phone != detected_phone:
+            basic_info["phone"] = detected_phone
+
+        detected_email = resume_parser.extract_email(raw_text)
+        current_email = basic_info.get("email")
+        current_detected = resume_parser.extract_email(str(current_email)) if current_email else None
+        if detected_email and current_detected != detected_email:
+            basic_info["email"] = detected_email
 
     async def get_resume_text(self, resume_id: str) -> str:
         """获取简历原始文本"""
