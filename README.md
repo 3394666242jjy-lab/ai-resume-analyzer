@@ -1,6 +1,6 @@
 # AI 赋能的智能简历分析系统
 
-基于 Python + FastAPI 构建的智能简历分析系统，支持 PDF 简历解析、AI 关键信息提取、岗位匹配评分与缓存机制。
+基于 Python + FastAPI + 通义千问 (Qwen) 的智能简历分析系统，支持 PDF 简历解析、AI 关键信息提取、岗位匹配分析，可选择 Redis 或内存缓存。
 
 ---
 
@@ -10,7 +10,7 @@
 - **后端 API**：https://resume-api-v-urokdnwpiq.cn-hangzhou.fcapp.run
 - **API 文档**：https://resume-api-v-urokdnwpiq.cn-hangzhou.fcapp.run/docs
 
-> **注意**：阿里云 FC 函数计算有免费额度，超出后按量计费。若长期不用建议删除资源避免扣费。
+> **注意**：阿里云 FC 按量计费，测试完毕建议释放资源避免持续扣费。
 
 ---
 
@@ -21,7 +21,7 @@
 ├── backend/                 # Python FastAPI 后端
 │   ├── app/
 │   │   ├── api/v1/          # RESTful API 路由层
-│   │   ├── core/            # 核心配置与缓存管理
+│   │   ├── core/            # 配置与缓存管理
 │   │   ├── models/          # Pydantic 数据模型
 │   │   ├── services/        # 业务逻辑层
 │   │   └── utils/           # 工具模块（PDF 解析、AI 客户端）
@@ -32,13 +32,14 @@
 │   ├── requirements.txt     # Python 依赖
 │   ├── bootstrap            # 阿里云 FC custom runtime 启动脚本
 │   ├── s.yaml               # 阿里云 Serverless 部署配置
+│   ├── .fcignore            # FC 部署排除文件
 │   └── Dockerfile           # 容器化构建
 ├── frontend/                # 前端页面
-│   ├── index.html           # 主页面
+│   ├── index.html           # 首页
 │   ├── style.css            # 样式文件
-│   ├── app.js               # 交互逻辑
+│   ├── app.js               # 业务逻辑
 │   └── deploy-config.js     # 后端 API 地址配置
-├── .github/workflows/       # GitHub Actions 自动化部署
+├── .github/workflows/       # GitHub Actions 自动部署
 └── README.md
 ```
 
@@ -49,13 +50,13 @@
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | Web 框架 | FastAPI + Uvicorn | 高性能异步 Python Web 框架，自动生成 OpenAPI 文档 |
-| 数据校验 | Pydantic | 类型安全的请求/响应模型 |
+| 数据校验 | Pydantic | 类型安全，请求/响应模型 |
 | PDF 解析 | PyPDF2 | 纯 Python PDF 文本提取 |
-| AI 模型 | OpenAI GPT-4o-mini | 智能信息提取与匹配评分（可选，未配置时自动降级规则引擎） |
-| 缓存 | Redis / Memory | 支持 Redis 分布式缓存，未配置时自动降级为内存缓存 |
-| 部署 | 阿里云函数计算 FC | Serverless 部署，按需计费 |
-| 前端 | 原生 HTML5 + CSS3 + JS | 零构建工具，单页面应用 |
-| CI/CD | GitHub Actions | 自动部署前端至 GitHub Pages |
+| AI 模型 | 通义千问 (Qwen) | 简历信息提取与匹配分析（通过 OpenAI 兼容接口调用） |
+| 缓存 | Redis / Memory | 支持 Redis 分布式缓存，未配置时自动回退为内存缓存 |
+| 部署 | 阿里云函数计算 FC | Serverless 架构，按需付费 |
+| 前端 | 原生 HTML5 + CSS3 + JS | 零构建工具，单页应用 |
+| CI/CD | GitHub Actions | 自动构建前端到 GitHub Pages |
 
 ---
 
@@ -63,13 +64,12 @@
 
 | 模块 | 功能 | 状态 |
 |------|------|------|
-| **简历上传与解析** | 支持 PDF 多页简历上传与文本提取 | 必选 |
-| **关键信息提取** | AI 自动提取姓名、电话、邮箱、地址等基本信息 | 必选 |
-| **简历评分与匹配** | 基于岗位需求进行技能、经验、学历多维匹配评分 | 必选 |
-| **结果返回与缓存** | JSON 结构化返回，支持 Redis / 内存缓存 | 必选 |
-| **前端交互页面** | 简洁美观的 Web 交互界面 | 必选 |
-| **AI 精准评分** | 调用 OpenAI GPT 模型进行深度分析 | 加分项 |
-| **缓存机制** | 支持 Redis 分布式缓存，自动降级内存缓存 | 加分项 |
+| **简历上传与解析** | 支持 PDF 格式简历上传与文本提取 | 已就绪 |
+| **关键信息提取** | AI 自动提取姓名、电话、邮箱、地址、工作经历、项目经历、技能等 | 已就绪 |
+| **岗位匹配分析** | 基于岗位描述进行技能、经验、学历多维匹配评分 | 已就绪 |
+| **缓存与持久化** | JSON 结构化缓存，支持 Redis / 内存缓存 | 已就绪 |
+| **前端交互页面** | 开箱即用的 Web 可视化界面 | 已就绪 |
+| **AI 语义理解** | 基于 Qwen 大模型进行深度语义提取与匹配 | 已就绪 |
 
 ---
 
@@ -79,7 +79,7 @@
 
 - Python >= 3.9
 - (可选) Redis >= 5.0
-- (可选) OpenAI API Key
+- 通义千问 API Key（从 [阿里云百炼](https://bailian.console.aliyun.com/) 获取）
 
 ### 1. 克隆仓库
 
@@ -106,7 +106,21 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. 启动服务
+### 4. 配置环境变量
+
+复制 `.env.example` 为 `.env`，并填写你的通义千问 API Key：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`：
+
+```env
+QWEN_API_KEY=sk-你的真实Key
+```
+
+### 5. 启动服务
 
 ```bash
 python start.py
@@ -118,22 +132,34 @@ python start.py
 
 ---
 
-## 配置说明
+## 环境变量说明
 
-复制 `.env.example` 为 `.env`，按需配置：
+### 本地开发（.env 文件）
 
-| 环境变量 | 说明 | 默认值 |
+| 变量名 | 说明 | 默认值 |
 |---------|------|--------|
-| `OPENAI_API_KEY` | OpenAI API 密钥（可选） | - |
-| `OPENAI_BASE_URL` | OpenAI API 地址 | https://api.openai.com/v1 |
-| `OPENAI_MODEL` | 使用的模型 | gpt-4o-mini |
-| `REDIS_HOST` | Redis 主机地址（可选） | - |
+| `QWEN_API_KEY` | 通义千问 API 密钥 | - |
+| `QWEN_BASE_URL` | 通义千问接口地址 | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `QWEN_MODEL` | 使用模型 | `qwen-plus` |
+| `REDIS_HOST` | Redis 服务器地址（可选） | - |
 | `REDIS_PORT` | Redis 端口 | 6379 |
-| `APP_HOST` | 服务监听地址 | 0.0.0.0 |
+| `APP_HOST` | 服务绑定地址 | 0.0.0.0 |
 | `APP_PORT` | 服务端口 | 8000 |
 | `MAX_FILE_SIZE` | 最大上传文件大小 | 10485760 (10MB) |
 
-> **提示**：不配置 `OPENAI_API_KEY` 也能完整运行，系统会自动降级为规则引擎。不配置 `REDIS_HOST` 会自动使用内存缓存。
+> 兼容阿里云标准变量名 `DASHSCOPE_API_KEY`，优先级低于 `QWEN_API_KEY`。
+
+### 阿里云 FC 控制台配置
+
+由于阿里云 FC 控制台对环境变量名的输入存在兼容性问题，**建议直接在 FC 控制台使用以下极简命名**：
+
+| FC 控制台变量名 | 对应含义 | 示例值 |
+|----------------|---------|--------|
+| `ApiKey` | 通义千问 API Key | `sk-xxx` |
+| `BaseUrl` | 接口 Base URL | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| `AiModel` | 模型名称 | `qwen-plus` |
+
+代码已同时兼容 `QWEN_API_KEY`、`QwenApiKey`、`ApiKey` 等多种命名方式。
 
 ---
 
@@ -149,7 +175,7 @@ file: <PDF 文件>
 job_description: <岗位描述文本>
 ```
 
-**响应示例：**
+**响应示例**
 
 ```json
 {
@@ -176,13 +202,14 @@ job_description: <岗位描述文本>
 }
 ```
 
-### 其他接口
+### 核心接口列表
 
 | 接口 | 方法 | 说明 |
 |------|------|------|
 | `/api/v1/resume/upload` | POST | 上传简历文件 |
 | `/api/v1/resume/parse/{resume_id}` | GET | 解析简历信息 |
-| `/api/v1/resume/match` | POST | 简历与岗位匹配评分 |
+| `/api/v1/resume/match` | POST | 简历岗位匹配分析 |
+| `/api/v1/resume/upload-and-match` | POST | 上传+匹配一步到位 |
 
 ---
 
@@ -193,55 +220,56 @@ job_description: <岗位描述文本>
 ```bash
 cd backend
 
-# 安装 Serverless Devs 工具
-npm install @serverless-devs/s -g
+# 安装 Serverless Devs CLI
+npm install -g @serverless-devs/s
 
-# 配置阿里云凭证
+# 配置阿里云凭证（首次使用）
 s config add
 
-# 部署
+# 部署（.env 等敏感文件已自动排除）
 s deploy
 ```
 
-部署后获取公网访问地址，更新 `frontend/deploy-config.js` 中的 `API_BASE`，然后推送至 GitHub。
+部署完成后获取公网访问地址，然后到 FC 控制台配置环境变量：
+- **函数名**：`resume-api-v5`
+- **环境变量**：添加 `ApiKey` = `sk-你的Key`
 
 **注意事项**：
-- 阿里云 FC `custom.debian11` runtime 使用 Python 3.9
-- 部署时需将纯 Python 依赖打包上传（`pip install -r requirements.txt -t .`）
-- 免费额度：每月 100 万次调用 + 40 万 GB-秒计算资源
+- FC `custom.debian11` runtime 使用 Python 3.9
+- 首次冷启动会自动执行 `pip install` 安装新依赖
+- 按量计费：每月前 100 万次调用 + 40 万 GB-秒资源免费
 
-### 方式二：Docker 部署
+### 方式二：Docker 本地运行
 
 ```bash
 cd backend
 docker build -t ai-resume-analyzer .
-docker run -p 8000:8000 ai-resume-analyzer
+docker run -p 8000:8000 --env-file .env ai-resume-analyzer
 ```
 
-### 方式三：前端部署至 GitHub Pages
+### 方式三：前端部署到 GitHub Pages
 
-1. 在 GitHub 创建公开仓库
-2. 推送代码至仓库
-3. 进入仓库 **Settings > Pages**
-4. Source 选择 **GitHub Actions**
-5. 工作流自动运行，部署完成后即可访问
+1. Fork 或推送代码到 GitHub 仓库
+2. 进入仓库 **Settings > Pages**
+3. Source 选择 **GitHub Actions**
+4. 等待自动构建完成即可访问
 
 **配置后端 API 地址**：
 
-前端部署后，修改 `frontend/deploy-config.js`：
+前端修改 `frontend/deploy-config.js`：
 ```javascript
-window.API_BASE = 'https://你的阿里云地址/api/v1';
+window.API_BASE = 'https://你的FC地址/api/v1';
 ```
 
-或在浏览器控制台执行：
+或在浏览器控制台临时切换：
 ```javascript
-localStorage.setItem('api_base', 'https://你的阿里云地址/api/v1');
+localStorage.setItem('api_base', 'https://你的FC地址/api/v1');
 location.reload();
 ```
 
 ---
 
-## 测试
+## 运行测试
 
 ```bash
 cd backend
@@ -250,18 +278,18 @@ pytest tests/
 
 ---
 
-## 评分标准对应
+## 评分标准与响应
 
-| 维度 | 权重 | 本项目实现 |
-|------|------|-----------|
-| **功能完整性** | 30% | 全部必选模块已实现并可正常运行 |
-| **代码质量** | 25% | 结构清晰，命名规范，分层明确（API/Service/Utils） |
-| **工程化实践** | 20% | Git 管理、README 文档、Dockerfile、Serverless 配置、错误处理 |
-| **技术深度** | 15% | AI 模型可插拔设计、缓存自动降级、性能优化 |
-| **加分项** | 10% | AI 精准评分、Redis 缓存、前端交互体验、GitHub Pages 部署 |
+| 维度 | 权重 | 实现要点 |
+|------|------|----------|
+| **核心功能实现** | 30% | 全栈工程实现，PDF 解析、AI 提取、匹配评分 |
+| **代码质量** | 25% | 结构清晰、类型注解、分层明确（API/Service/Utils） |
+| **工程化实践** | 20% | Git 规范、README 文档、Dockerfile、Serverless 配置、环境变量安全 |
+| **架构设计** | 15% | AI 模型可替换性、缓存自动降级、部署优化 |
+| **附加功能** | 10% | AI 语义匹配、Redis 缓存、前端交互界面、GitHub Pages 部署 |
 
 ---
 
-## 许可证
+## License
 
 MIT License

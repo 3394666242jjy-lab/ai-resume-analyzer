@@ -1,374 +1,284 @@
 """
 AI 模型客户端模块
-支持 OpenAI API 调用，同时提供本地规则引擎作为降级方案
+使用通义千问 (Qwen) API 进行简历信息提取和岗位匹配分析。
+直接基于 httpx 发送 HTTP 请求，不依赖 openai SDK，避免平台兼容性问题。
 """
 import json
+import os
 import re
 from typing import Optional, Dict, Any
+
+import httpx
 
 from app.core.config import settings
 
 
-class RuleBasedExtractor:
-    """基于规则的简历信息提取器（AI 不可用时的降级方案）"""
-
-    def extract(self, text: str) -> Dict[str, Any]:
-        """从文本中提取关键信息"""
-        result = {
-            "basic_info": {
-                "name": self._extract_name(text),
-                "phone": self._extract_phone(text),
-                "email": self._extract_email(text),
-                "address": self._extract_address(text),
-            },
-            "job_intention": {
-                "position": self._extract_job_position(text),
-                "expected_salary": self._extract_salary(text),
-                "expected_city": self._extract_city(text),
-            },
-            "work_years": self._extract_work_years(text),
-            "education_background": self._extract_education(text),
-            "work_experience": self._extract_work_experience(text),
-            "project_experience": self._extract_projects(text),
-            "skills": self._extract_skills(text),
-            "self_evaluation": None,
-        }
-        return result
-
-    def _extract_name(self, text: str) -> Optional[str]:
-        lines = text.split('\n')[:5]
-        for line in lines:
-            line = line.strip()
-            if 2 <= len(line) <= 6 and not any(c in line for c in '0123456789@'):
-                return line
-        return None
-
-    def _extract_phone(self, text: str) -> Optional[str]:
-        pattern = r'1[3-9]\d{9}'
-        match = re.search(pattern, text)
-        return match.group(0) if match else None
-
-    def _extract_email(self, text: str) -> Optional[str]:
-        pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
-        match = re.search(pattern, text)
-        return match.group(0) if match else None
-
-    def _extract_address(self, text: str) -> Optional[str]:
-        pattern = r'(现居|居住地|地址)[:：\s]*([^\n]{2,30})'
-        match = re.search(pattern, text)
-        return match.group(2).strip() if match else None
-
-    def _extract_job_position(self, text: str) -> Optional[str]:
-        pattern = r'(求职意向|期望职位|应聘岗位)[:：\s]*([^\n]{1,20})'
-        match = re.search(pattern, text)
-        return match.group(2).strip() if match else None
-
-    def _extract_salary(self, text: str) -> Optional[str]:
-        pattern = r'(期望薪资|薪资要求|薪水)[:：\s]*([^\n]{1,30})'
-        match = re.search(pattern, text)
-        return match.group(2).strip() if match else None
-
-    def _extract_city(self, text: str) -> Optional[str]:
-        pattern = r'(期望城市|意向城市|工作地点)[:：\s]*([^\n]{1,20})'
-        match = re.search(pattern, text)
-        return match.group(2).strip() if match else None
-
-    def _extract_work_years(self, text: str) -> Optional[str]:
-        pattern = r'(\d+)[\s]*年[\s]*(工作|相关|开发|经验)'
-        match = re.search(pattern, text)
-        if match:
-            return f"{match.group(1)}年"
-        pattern2 = r'(工作经验|工作年限)[:：\s]*(\d+)[\s]*年'
-        match2 = re.search(pattern2, text)
-        if match2:
-            return f"{match2.group(2)}年"
-        return None
-
-    def _extract_education(self, text: str) -> list:
-        educations = []
-        pattern = r'(本科|硕士|博士|专科|大专|研究生|MBA)(.*?)(\d{4}[\./年]\d{1,2}|至今)'
-        matches = re.findall(pattern, text)
-        for match in matches[:3]:
-            educations.append({
-                "school": None,
-                "degree": match[0],
-                "major": match[1].strip(' |，,、') if match[1] else None,
-                "duration": match[2] if len(match) > 2 else None,
-            })
-        return educations
-
-    def _extract_work_experience(self, text: str) -> list:
-        experiences = []
-        lines = text.split('\n')
-        for i, line in enumerate(lines):
-            if any(kw in line for kw in ['有限公司', '科技公司', '互联网公司', '集团']):
-                company = line.strip()
-                position = lines[i + 1].strip() if i + 1 < len(lines) else None
-                if position and len(position) < 30:
-                    experiences.append({
-                        "company": company,
-                        "position": position,
-                        "duration": None,
-                        "description": None,
-                    })
-        return experiences[:5]
-
-    def _extract_projects(self, text: str) -> list:
-        projects = []
-        lines = text.split('\n')
-        in_project = False
-        current_project = {}
-        for i, line in enumerate(lines):
-            if '项目' in line and len(line) < 30 and not in_project:
-                in_project = True
-                current_project = {"name": line.strip(), "role": None, "duration": None, "description": None}
-            elif in_project and current_project.get("description") is None:
-                if len(line) > 20:
-                    current_project["description"] = line.strip()
-                    projects.append(current_project)
-                    in_project = False
-            if len(projects) >= 5:
-                break
-        return projects
-
-    def _extract_skills(self, text: str) -> list:
-        tech_keywords = [
-            'Python', 'Java', 'JavaScript', 'TypeScript', 'Go', 'Rust', 'C++', 'C#', 'PHP', 'Ruby',
-            'React', 'Vue', 'Angular', 'Node.js', 'Django', 'Flask', 'Spring', 'SpringBoot',
-            'MySQL', 'PostgreSQL', 'MongoDB', 'Redis', 'Elasticsearch', 'Kafka', 'RabbitMQ',
-            'Docker', 'Kubernetes', 'AWS', '阿里云', 'Linux', 'Git', 'CI/CD',
-            'TensorFlow', 'PyTorch', 'Pandas', 'NumPy', 'Scikit-learn', 'OpenAI',
-            'HTML', 'CSS', 'jQuery', 'Bootstrap', 'Tailwind',
-            'RESTful', 'GraphQL', 'gRPC', 'Microservices',
-            'Nginx', 'Tomcat', 'Apache',
-            'Hadoop', 'Spark', 'Flink', 'Hive',
-        ]
-        found_skills = []
-        for skill in tech_keywords:
-            if skill in text:
-                found_skills.append(skill)
-        return found_skills
-
-
-class OpenAIClient:
-    """OpenAI API 客户端"""
+class QwenAIClient:
+    """通义千问 (Qwen) AI API 客户端（基于 httpx）"""
 
     def __init__(self):
-        self.client = None
-        self.model = settings.OPENAI_MODEL
-        self.rule_extractor = RuleBasedExtractor()
-        if settings.ai_enabled:
-            try:
-                from openai import AsyncOpenAI
-                self.client = AsyncOpenAI(
-                    api_key=settings.OPENAI_API_KEY,
-                    base_url=settings.OPENAI_BASE_URL,
-                )
-            except ImportError:
-                pass
+        self.api_key = settings.ai_api_key
+        self.base_url = settings.ai_base_url.rstrip("/")
+        self.model = settings.ai_model
+        self.client = httpx.AsyncClient(
+            base_url=self.base_url,
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            timeout=60.0,
+        )
+
+    def _clean_json_response(self, content: str) -> str:
+        """清洗模型返回的内容，提取其中的 JSON 部分，兼容 markdown 代码块。"""
+        content = content.strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content, flags=re.IGNORECASE)
+            content = re.sub(r"\s*```$", "", content)
+        return content.strip()
+
+    async def _chat_completion(self, messages: list, temperature: float = 0.1, max_tokens: int = 4096) -> str:
+        """调用千问 Chat Completion API，返回模型生成的文本内容。"""
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+        try:
+            response = await self.client.post("/chat/completions", json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(f"千问 API 请求失败 ({exc.response.status_code}): {exc.response.text[:500]}") from exc
+        except Exception as exc:
+            raise RuntimeError(f"千问 API 调用失败: {exc}") from exc
 
     async def extract_resume_info(self, text: str) -> Dict[str, Any]:
-        """使用 AI 模型提取简历信息"""
-        if self.client is None:
-            return self.rule_extractor.extract(text)
+        """
+        使用 Qwen AI 从简历文本中提取结构化信息。
 
-        prompt = f"""
-请从以下简历文本中提取关键信息，并以 JSON 格式返回。
-注意：
-1. 如果某项信息无法提取，使用 null
-2. 工作年限请提取为 "X年" 的格式
-3. 教育背景、工作经历、项目经历请提取为数组
-4. 技能请提取为字符串数组
+        Args:
+            text: 清洗后的简历全文。
 
-简历文本：
-{text[:6000]}
+        Returns:
+            结构化的简历信息字典。
+        """
+        if not self.api_key:
+            env_status = {
+                "ApiKey": bool(os.getenv("ApiKey")),
+                "BASE_URL": bool(os.getenv("BASE_URL")),
+                "AI_MODEL": bool(os.getenv("AI_MODEL")),
+                "QWEN_API_KEY": bool(os.getenv("QWEN_API_KEY")),
+                "QwenApiKey": bool(os.getenv("QwenApiKey")),
+                "DASHSCOPE_API_KEY": bool(os.getenv("DASHSCOPE_API_KEY")),
+                ".env_exists": os.path.exists("/code/.env"),
+            }
+            raise RuntimeError(
+                f"AI 客户端未初始化。环境变量检测: {env_status}。"
+                f"当前生效 Key 前8位: {self.api_key[:8] if self.api_key else '空'}...。"
+                "请确保 .env 文件中已配置 QWEN_API_KEY。"
+            )
 
-请严格按照以下 JSON 格式返回：
-{{
-    "basic_info": {{
-        "name": "姓名",
-        "phone": "电话",
-        "email": "邮箱",
-        "address": "地址"
-    }},
-    "job_intention": {{
-        "position": "求职岗位",
-        "expected_salary": "期望薪资",
-        "expected_city": "期望城市"
-    }},
-    "work_years": "工作年限",
-    "education_background": [
-        {{
-            "school": "学校",
-            "degree": "学历",
-            "major": "专业",
-            "duration": "就读时间"
-        }}
-    ],
-    "work_experience": [
-        {{
-            "company": "公司",
-            "position": "职位",
-            "duration": "工作时间",
-            "description": "工作内容"
-        }}
-    ],
-    "project_experience": [
-        {{
-            "name": "项目名",
-            "role": "角色",
-            "duration": "项目时间",
-            "description": "项目描述"
-        }}
-    ],
-    "skills": ["技能1", "技能2"],
-    "self_evaluation": "自我评价"
-}}
-"""
+        max_chars = 15000
+        truncated_text = text[:max_chars]
+        if len(text) > max_chars:
+            truncated_text += "\n...（后文已截断）"
+
+        system_prompt = (
+            "你是一名资深的简历解析专家。任务：从非结构化的简历文本中，"
+            "精确提取关键字段，并以严格合法的 JSON 返回。\n\n"
+            "提取规则：\n"
+            "1. 基本信息(basic_info)：姓名、手机号、邮箱、所在城市/地址。\n"
+            "2. 求职意向(job_intention)：应聘职位、期望薪资、期望城市。\n"
+            "3. 工作年限(work_years)：如'3年经验'提取为'3年'；无法推断则 null。\n"
+            "4. 教育背景(education_background)：学校、学历(本科/硕士/博士/专科等)、专业、时间段。\n"
+            "5. 工作经历(work_experience)：公司名、职位、在职时间、工作内容描述。\n"
+            "6. 项目经历(project_experience)：项目名、担任角色、项目时间、项目描述。\n"
+            "7. 技能列表(skills)：提取所有专业技能，返回为字符串数组；不要遗漏，也不要合并成一句话。\n"
+            "8. 自我评价(self_evaluation)：如有则提取完整内容，否则 null。\n\n"
+            "输出要求：\n"
+            "- 必须返回合法、可解析的 JSON，不要包含 markdown 标记或额外解释文字。\n"
+            "- 不存在的字段使用 null；数组字段不存在则返回空数组 []。\n"
+            "- 技能列表必须拆分为独立项，例如 [\"Python\", \"Spring Boot\", \"MySQL\"]。\n"
+            "- 工作/项目经历的 description 保留原文核心信息，可适当精简。"
+        )
+
+        user_prompt = (
+            f"请从以下简历文本中提取结构化信息：\n\n{truncated_text}\n\n"
+            "请严格按照以下 JSON Schema 输出，不要添加任何额外说明：\n"
+            "{\n"
+            '  "basic_info": {\n'
+            '    "name": "姓名或null",\n'
+            '    "phone": "手机号或null",\n'
+            '    "email": "邮箱或null",\n'
+            '    "address": "地址或null"\n'
+            "  },\n"
+            '  "job_intention": {\n'
+            '    "position": "应聘职位或null",\n'
+            '    "expected_salary": "期望薪资或null",\n'
+            '    "expected_city": "期望城市或null"\n'
+            "  },\n"
+            '  "work_years": "工作年限或null",\n'
+            '  "education_background": [\n'
+            "    {\n"
+            '      "school": "学校名",\n'
+            '      "degree": "学历",\n'
+            '      "major": "专业",\n'
+            '      "duration": "时间段"\n'
+            "    }\n"
+            "  ],\n"
+            '  "work_experience": [\n'
+            "    {\n"
+            '      "company": "公司名",\n'
+            '      "position": "职位",\n'
+            '      "duration": "时间段",\n'
+            '      "description": "工作内容"\n'
+            "    }\n"
+            "  ],\n"
+            '  "project_experience": [\n'
+            "    {\n"
+            '      "name": "项目名",\n'
+            '      "role": "角色",\n'
+            '      "duration": "时间段",\n'
+            '      "description": "项目描述"\n'
+            "    }\n"
+            "  ],\n"
+            '  "skills": ["技能1", "技能2"],\n'
+            '  "self_evaluation": "自我评价或null"\n'
+            "}"
+        )
+
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            content = await self._chat_completion(
                 messages=[
-                    {"role": "system", "content": "你是一个专业的简历信息提取助手，擅长从非结构化文本中提取结构化信息。"},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.1,
-                response_format={"type": "json_object"},
+                max_tokens=4096,
             )
-            content = response.choices[0].message.content
-            result = json.loads(content)
-            result.setdefault("basic_info", {})
-            result.setdefault("job_intention", {})
-            result.setdefault("education_background", [])
-            result.setdefault("work_experience", [])
-            result.setdefault("project_experience", [])
-            result.setdefault("skills", [])
-            return result
-        except Exception:
-            return self.rule_extractor.extract(text)
+            cleaned = self._clean_json_response(content)
+            result = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"AI 返回内容 JSON 解析失败: {exc}。原始内容前 500 字: {content[:500]}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(f"AI 提取简历信息失败: {exc}") from exc
+
+        result.setdefault("basic_info", {})
+        result.setdefault("job_intention", {})
+        result.setdefault("work_years", None)
+        result.setdefault("education_background", [])
+        result.setdefault("work_experience", [])
+        result.setdefault("project_experience", [])
+        result.setdefault("skills", [])
+        result.setdefault("self_evaluation", None)
+        return result
 
     async def match_resume(self, resume_text: str, job_description: str) -> Dict[str, Any]:
-        """使用 AI 模型对简历和岗位进行匹配评分"""
-        if self.client is None:
-            return self._rule_based_match(resume_text, job_description)
+        """
+        使用 Qwen AI 对简历与岗位描述进行深度语义匹配分析。
 
-        prompt = f"""
-请对以下简历和岗位需求进行匹配分析，并以 JSON 格式返回评分结果。
+        Args:
+            resume_text: 简历全文。
+            job_description: 岗位描述（JD）。
 
-岗位需求：
-{job_description[:3000]}
+        Returns:
+            结构化的匹配评分结果。
+        """
+        if not self.api_key:
+            env_status = {
+                "ApiKey": bool(os.getenv("ApiKey")),
+                "BASE_URL": bool(os.getenv("BASE_URL")),
+                "AI_MODEL": bool(os.getenv("AI_MODEL")),
+                "QWEN_API_KEY": bool(os.getenv("QWEN_API_KEY")),
+                "QwenApiKey": bool(os.getenv("QwenApiKey")),
+                "DASHSCOPE_API_KEY": bool(os.getenv("DASHSCOPE_API_KEY")),
+                ".env_exists": os.path.exists("/code/.env"),
+            }
+            raise RuntimeError(
+                f"AI 客户端未初始化。环境变量检测: {env_status}。"
+                f"当前生效 Key 前8位: {self.api_key[:8] if self.api_key else '空'}...。"
+                "请确保 .env 文件中已配置 QWEN_API_KEY。"
+            )
 
-简历内容：
-{resume_text[:4000]}
+        system_prompt = (
+            "你是一名资深的技术招聘专家与 HR 总监。任务：对比候选人简历与招聘岗位要求，"
+            "给出专业、客观的匹配评估，并以严格合法的 JSON 返回。\n\n"
+            "评估维度：\n"
+            "1. overall_score (综合匹配度, 0-100)：基于简历与 JD 的整体契合度打分。\n"
+            "2. skill_match_rate (技能匹配度, 0-100)：技能栈的重合度与深度。\n"
+            "3. experience_match_rate (经验匹配度, 0-100)：工作年限、行业背景、项目经验匹配度。\n"
+            "4. education_match_rate (学历匹配度, 0-100)：学历层次与专业相关度。\n\n"
+            "输出要求：\n"
+            "- matched_keywords：简历中与岗位要求匹配的关键技能/优势（最多 10 个）。\n"
+            "- missing_keywords：岗位要求但简历中明显缺失的关键点（最多 10 个）。\n"
+            "- analysis：用 2-4 句话给出综合匹配分析，包括优势和潜在不足。\n"
+            "- 必须返回合法 JSON，不要包含 markdown 标记或额外解释文字。"
+        )
 
-请严格按照以下 JSON 格式返回：
-{{
-    "overall_score": 85,
-    "skill_match_rate": 80,
-    "experience_match_rate": 90,
-    "education_match_rate": 85,
-    "matched_keywords": ["匹配的关键词1", "匹配的关键词2"],
-    "missing_keywords": ["缺失的关键词1", "缺失的关键词2"],
-    "analysis": "详细的匹配分析说明"
-}}
+        user_prompt = (
+            f"请对以下简历和岗位进行匹配分析：\n\n"
+            f"【岗位描述】\n{job_description[:4000]}\n\n"
+            f"【简历内容】\n{resume_text[:6000]}\n\n"
+            "请严格按照以下 JSON 格式输出，不要添加任何额外说明：\n"
+            "{\n"
+            '  "overall_score": 85,\n'
+            '  "skill_match_rate": 80,\n'
+            '  "experience_match_rate": 90,\n'
+            '  "education_match_rate": 85,\n'
+            '  "matched_keywords": ["匹配关键词1", "匹配关键词2"],\n'
+            '  "missing_keywords": ["缺失关键词1", "缺失关键词2"],\n'
+            '  "analysis": "综合匹配分析文本"\n'
+            "}"
+        )
 
-评分标准：
-- overall_score: 综合评分 (0-100)
-- skill_match_rate: 技能匹配率 (0-100)
-- experience_match_rate: 经验匹配率 (0-100)
-- education_match_rate: 学历匹配率 (0-100)
-"""
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
+            content = await self._chat_completion(
                 messages=[
-                    {"role": "system", "content": "你是一个专业的招聘顾问，擅长分析简历与岗位的匹配度。"},
-                    {"role": "user", "content": prompt}
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
                 ],
                 temperature=0.2,
-                response_format={"type": "json_object"},
+                max_tokens=2048,
             )
-            content = response.choices[0].message.content
-            result = json.loads(content)
-            for key in ["overall_score", "skill_match_rate", "experience_match_rate", "education_match_rate"]:
-                if key in result:
-                    result[key] = max(0, min(100, float(result[key])))
-            result.setdefault("matched_keywords", [])
-            result.setdefault("missing_keywords", [])
-            result.setdefault("analysis", "")
-            return result
-        except Exception:
-            return self._rule_based_match(resume_text, job_description)
+            cleaned = self._clean_json_response(content)
+            result = json.loads(cleaned)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"AI 返回内容 JSON 解析失败: {exc}。原始内容前 500 字: {content[:500]}"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(f"AI 匹配分析失败: {exc}") from exc
 
-    def _rule_based_match(self, resume_text: str, job_description: str) -> Dict[str, Any]:
-        """基于规则的匹配评分（无需 jieba）"""
-        resume_lower = resume_text.lower()
-        job_lower = job_description.lower()
-
-        # 常见技术关键词
-        tech_keywords = [
-            'python', 'java', 'javascript', 'typescript', 'go', 'rust', 'c++', 'c#', 'php',
-            'react', 'vue', 'angular', 'nodejs', 'node.js', 'django', 'flask', 'spring',
-            'mysql', 'postgresql', 'mongodb', 'redis', 'elasticsearch', 'kafka',
-            'docker', 'kubernetes', 'aws', 'linux', 'git',
-            'tensorflow', 'pytorch', '机器学习', '深度学习', 'ai',
-            'html', 'css', 'jquery', 'bootstrap',
-            'restful', 'graphql', 'grpc', 'microservices',
-            'nginx', 'tomcat', 'apache',
-        ]
-
-        job_tech = [w for w in tech_keywords if w in job_lower]
-        resume_tech = [w for w in tech_keywords if w in resume_lower]
-
-        matched = [w for w in job_tech if w in resume_tech]
-        missing = [w for w in job_tech if w not in resume_tech]
-
-        if job_tech:
-            skill_rate = len(matched) / len(job_tech) * 100
-        else:
-            # 非技术岗位，计算通用匹配度
-            job_words = set(job_lower.split())
-            resume_words = set(resume_lower.split())
-            common_words = job_words & resume_words
-            stop_words = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'and', 'or', 'of', 'to', 'in', 'for', 'with', 'on', 'at'}
-            common_words -= stop_words
-            job_words -= stop_words
-            skill_rate = len(common_words) / max(len(job_words), 1) * 100
-            matched = list(common_words)[:10]
-            missing = list(job_words - resume_words)[:10]
-
-        # 经验匹配
-        years_match = re.search(r'(\d+)[\s]*年[\s]*(?:工作|经验|相关)', resume_text)
-        req_years_match = re.search(r'(\d+)[\s]*年[\s]*(?:工作|经验|相关)', job_description)
-        exp_rate = 70
-        if years_match and req_years_match:
-            y = int(years_match.group(1))
-            ry = int(req_years_match.group(1))
-            if y >= ry:
-                exp_rate = 95
+        for key in [
+            "overall_score",
+            "skill_match_rate",
+            "experience_match_rate",
+            "education_match_rate",
+        ]:
+            if key in result:
+                try:
+                    val = float(result[key])
+                    result[key] = max(0.0, min(100.0, round(val, 1)))
+                except (ValueError, TypeError):
+                    result[key] = 0.0
             else:
-                exp_rate = 50 + (y / ry) * 45
+                result[key] = 0.0
 
-        overall = (skill_rate * 0.5 + exp_rate * 0.3 + 70 * 0.2)
-
-        return {
-            "overall_score": round(overall, 1),
-            "skill_match_rate": round(skill_rate, 1),
-            "experience_match_rate": round(exp_rate, 1),
-            "education_match_rate": 70.0,
-            "matched_keywords": matched[:15],
-            "missing_keywords": missing[:15],
-            "analysis": f"技能匹配率 {round(skill_rate, 1)}%，经验匹配率 {round(exp_rate, 1)}%。{'高度匹配' if overall >= 80 else '基本匹配' if overall >= 60 else '匹配度较低'}",
-        }
+        result.setdefault("matched_keywords", [])
+        result.setdefault("missing_keywords", [])
+        result.setdefault("analysis", "暂无分析")
+        return result
 
 
-# 全局 AI 客户端
-_ai_client: Optional[OpenAIClient] = None
+# 全局 AI 客户端单例
+_ai_client: Optional[QwenAIClient] = None
 
 
-def get_ai_client() -> OpenAIClient:
+def get_ai_client() -> QwenAIClient:
     """获取 AI 客户端实例"""
     global _ai_client
     if _ai_client is None:
-        _ai_client = OpenAIClient()
+        _ai_client = QwenAIClient()
     return _ai_client

@@ -1,8 +1,12 @@
 """
 简历相关 API 路由
 """
+import base64
+import json
 import os
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+import tempfile
+
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from app.core.config import settings
@@ -89,23 +93,53 @@ async def match_resume(request: ResumeMatchRequest):
 
 @router.post("/upload-and-match", response_model=ResumeMatchResponse)
 async def upload_and_match(
-    file: UploadFile = File(...),
-    job_description: str = Form(...),
+    request: Request,
+    file: UploadFile = File(None),
+    job_description: str = Form(None),
 ):
     """
     上传简历并立即进行匹配评分（一步到位）
     
-    - **file**: PDF 简历文件
-    - **job_description**: 岗位需求描述
+    支持两种请求格式：
+    - **multipart/form-data**: 传统文件上传（file + job_description）
+    - **text/plain**: Base64 JSON 上传（避免 CORS OPTIONS 预检）
+    
+    JSON 格式：{"filename": "xxx.pdf", "content": "base64字符串", "job_description": "..."}
     """
-    if not file.filename.lower().endswith('.pdf'):
+    contents = None
+    filename = None
+    jd = None
+
+    content_type = request.headers.get("content-type", "").lower()
+
+    if "text/plain" in content_type or "application/json" in content_type:
+        # Base64 JSON 模式（用于避免 CORS 预检）
+        try:
+            body = await request.body()
+            data = json.loads(body.decode("utf-8"))
+            filename = data.get("filename", "resume.pdf")
+            base64_content = data.get("content", "")
+            jd = data.get("job_description", "")
+            contents = base64.b64decode(base64_content)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"JSON/Base64 解析失败: {str(e)}")
+    else:
+        # multipart/form-data 模式（传统上传）
+        if file is None:
+            raise HTTPException(status_code=400, detail="缺少文件")
+        contents = await file.read()
+        filename = file.filename
+        jd = job_description or ""
+
+    if not filename or not filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="仅支持 PDF 格式文件")
 
-    contents = await file.read()
-    if len(contents) > settings.MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({settings.MAX_FILE_SIZE // 1024 // 1024}MB)")
+    # Base64 会增加约 33% 大小，放宽限制到 15MB
+    max_size = max(settings.MAX_FILE_SIZE, 15 * 1024 * 1024)
+    if len(contents) > max_size:
+        raise HTTPException(status_code=400, detail=f"文件大小超过限制 ({max_size // 1024 // 1024}MB)")
 
-    if not job_description or len(job_description.strip()) < 10:
+    if not jd or len(jd.strip()) < 10:
         raise HTTPException(status_code=400, detail="岗位描述过短，请提供详细描述")
 
     try:
@@ -113,13 +147,13 @@ async def upload_and_match(
         matching_service = get_matching_service()
 
         # 上传
-        upload_result = await resume_service.upload_resume(contents, file.filename)
+        upload_result = await resume_service.upload_resume(contents, filename)
         resume_id = upload_result["resume_id"]
 
         # 匹配
         result = await matching_service.match_resume_with_job(
             resume_id,
-            job_description.strip()
+            jd.strip()
         )
         return ResumeMatchResponse(**result)
     except Exception as e:

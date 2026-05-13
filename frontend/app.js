@@ -134,17 +134,31 @@ async function startAnalyze() {
     resultSection.style.display = 'none';
 
     try {
-        setProgress(10, '正在上传简历...');
+        setProgress(10, '正在读取简历...');
 
-        const formData = new FormData();
-        formData.append('file', currentFile);
-        formData.append('job_description', jobDescription.value.trim());
+        // 将 PDF 转为 Base64，避免 multipart/form-data 触发 CORS 预检（405）
+        const base64Content = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(currentFile);
+        });
 
-        setProgress(30, '正在解析 PDF...');
+        setProgress(30, '正在上传简历...');
 
+        const payload = JSON.stringify({
+            filename: currentFile.name,
+            content: base64Content,
+            job_description: jobDescription.value.trim(),
+        });
+
+        // 使用 text/plain 发送，这是浏览器 safelisted 类型，不会触发 OPTIONS 预检
         const response = await fetch(`${API_BASE}/resume/upload-and-match`, {
             method: 'POST',
-            body: formData,
+            headers: {
+                'Content-Type': 'text/plain',
+            },
+            body: payload,
         });
 
         setProgress(80, '正在分析匹配度...');

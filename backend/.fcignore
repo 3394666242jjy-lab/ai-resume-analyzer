@@ -1,0 +1,15 @@
+# Serverless Devs 部署排除文件（类似 .gitignore）
+# 注意：.env 不再排除，以便 FC 实例能读取到 API Key（.gitignore 已保证不上传 GitHub）
+# .env
+.env.example
+.env.local
+venv/
+.git/
+uploads/
+*.dist-info/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+*.log
+tests/

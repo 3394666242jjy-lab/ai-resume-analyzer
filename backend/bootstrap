@@ -1,4 +1,13 @@
 #!/bin/bash
 cd /code
+
+# 诊断：检查关键环境变量是否存在（不打印值，保护密钥）
+echo "=== Bootstrap ENV Diagnostic ===" >&2
+echo "ApiKey set: $([ -z "$ApiKey" ] && echo 'NO' || echo 'YES')" >&2
+echo "BASE_URL set: $([ -z "$BASE_URL" ] && echo 'NO' || echo 'YES')" >&2
+echo "AI_MODEL set: $([ -z "$AI_MODEL" ] && echo 'NO' || echo 'YES')" >&2
+echo "QWEN_API_KEY set: $([ -z "$QWEN_API_KEY" ] && echo 'NO' || echo 'YES')" >&2
+echo "==================================" >&2
+
 export PYTHONPATH=/code:$PYTHONPATH
 python3 -m uvicorn main:app --host 0.0.0.0 --port 9000
